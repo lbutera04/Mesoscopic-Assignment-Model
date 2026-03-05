@@ -2,18 +2,18 @@ import sumolib
 import numpy as np
 import pandas as pd
 
-from config import Config
-from osm.attributes import load_bad_edges, build_edge_attributes
-from osm.graph_build import build_connection_graph_no_internals, build_csr_from_graph
-from osm.geo import build_edges_gdf, attach_block_groups
-from demand.replica import load_replica, map_replica_to_edges
-from demand.spawns import build_spawn_tables
-from demand.centroids import build_bg_centroid_edge_map
-from sampling.api import dag_sample_centroid_od_paths
-from routes.build import build_routes_with_centroid_trunks
-from routes.sumo_io import write_sumo_routes_xml
-from eval.link_volumes import compute_edge_total_counts, load_replica_link_volume_counts
-from eval.distribution_compare import compare_edge_usage_distributions
+from .config import Config
+from .osm.attributes import load_bad_edges, build_edge_attributes
+from .osm.graph_build import build_connection_graph_no_internals, build_csr_from_graph
+from .osm.geo import build_edges_gdf, attach_block_groups
+from .demand.replica import load_replica, map_replica_to_edges
+from .demand.spawns import build_spawn_tables
+from .demand.centroids import build_bg_centroid_edge_map
+from .sampling.api import dag_sample_centroid_od_paths
+from .routes.build import build_routes_with_centroid_trunks
+from .routes.sumo_io import write_sumo_routes_xml
+from .eval.link_volumes import compute_edge_total_counts, load_replica_link_volume_counts
+from .eval.distribution_compare import compare_edge_usage_distributions
 
 def main() -> None:
     cfg = Config()

@@ -1,25 +1,63 @@
-import sumolib
+import argparse
+
 import numpy as np
 import pandas as pd
+import sumolib
 
 from .config import Config
-from .osm.attributes import load_bad_edges, build_edge_attributes
-from .osm.graph_build import build_connection_graph_no_internals, build_csr_from_graph
-from .osm.geo import build_edges_gdf, attach_block_groups
+from .demand.centroids import build_bg_centroid_edge_map
 from .demand.replica import load_replica, map_replica_to_edges
 from .demand.spawns import build_spawn_tables
-from .demand.centroids import build_bg_centroid_edge_map
-from .sampling.api import dag_sample_centroid_od_paths
+from .eval.distribution_compare import compare_edge_usage_distributions
+from .eval.link_volumes import compute_edge_total_counts, load_replica_link_volume_counts
+from .osm.attributes import build_edge_attributes, load_bad_edges
+from .osm.geo import attach_block_groups, build_edges_gdf
+from .osm.graph_build import build_connection_graph_no_internals, build_csr_from_graph
 from .routes.build import build_routes_with_centroid_trunks
 from .routes.sumo_io import write_sumo_routes_xml
-from .eval.link_volumes import compute_edge_total_counts, load_replica_link_volume_counts
-from .eval.distribution_compare import compare_edge_usage_distributions
+from .sampling.api import dag_sample_centroid_od_paths
+from .sampling.api_twotree_web import dag_sample_centroid_od_paths_twotree_web
+
+
+def _parse_cli_overrides(cfg: Config) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="CCCAR main pipeline")
+    parser.add_argument("--dag-model", choices=["mixed", "twotree_web"], default=cfg.dag_model)
+    parser.add_argument("--dag-slack", type=float, default=cfg.dag_slack)
+    parser.add_argument("--routes-per-od", type=int, default=cfg.routes_per_od)
+    parser.add_argument("--demand-scale", type=float, default=cfg.demand_scale)
+
+    parser.add_argument("--twotree-seed-bfs-max-hops", type=int, default=cfg.twotree_seed_bfs_max_hops)
+    parser.add_argument("--twotree-max-web-edges", type=int, default=cfg.twotree_max_web_edges)
+    parser.add_argument("--twotree-seed-min-incident", type=int, default=cfg.twotree_seed_min_incident)
+    parser.add_argument("--twotree-seed-min-distinct-bases", type=int, default=cfg.twotree_seed_min_distinct_bases)
+    parser.add_argument(
+        "--twotree-seed-require-link",
+        action="store_true",
+        default=cfg.twotree_seed_require_link,
+        help="Require at least one *_link incident edge when selecting webbing seeds",
+    )
+
+    return parser.parse_args()
+
 
 def main() -> None:
     cfg = Config()
+    args = _parse_cli_overrides(cfg)
+
+    cfg.dag_model = str(args.dag_model)
+    cfg.dag_slack = float(args.dag_slack)
+    cfg.routes_per_od = int(args.routes_per_od)
+    cfg.demand_scale = float(args.demand_scale)
+    cfg.twotree_seed_bfs_max_hops = int(args.twotree_seed_bfs_max_hops)
+    cfg.twotree_max_web_edges = int(args.twotree_max_web_edges)
+    cfg.twotree_seed_min_incident = int(args.twotree_seed_min_incident)
+    cfg.twotree_seed_min_distinct_bases = int(args.twotree_seed_min_distinct_bases)
+    cfg.twotree_seed_require_link = bool(args.twotree_seed_require_link)
+
     rng = np.random.default_rng(cfg.rng_seed)
 
     print("\n==================== CCCAR (MIXED-POTENTIAL DAG, ALL-DAY) ====================")
+    print(f"  DAG model: {cfg.dag_model}")
 
     # Step 1: load net, build graph
     print("\nStep 1: Load SUMO net and build edge-connection graph")
@@ -70,13 +108,12 @@ def main() -> None:
     print("unique origin BG examples:", mapped["origin_bgrp_fips_2020"].head().tolist())
     print("spawn_tables key example:", next(iter(spawn_tables.keys())) if spawn_tables else None)
 
-
     mapped = mapped[mapped["origin_bgrp_fips_2020"] != mapped["destination_bgrp_fips_2020"]].copy()
 
     if cfg.demand_scale < 1.0:
         before = len(mapped)
         mapped = mapped.sample(frac=cfg.demand_scale, random_state=cfg.rng_seed).reset_index(drop=True)
-        print(f"  Demand scaling: kept {len(mapped):,} / {before:,} inter-BG trips ({100*cfg.demand_scale:.1f}%)")
+        print(f"  Demand scaling: kept {len(mapped):,} / {before:,} inter-BG trips ({100 * cfg.demand_scale:.1f}%)")
     else:
         print("  Demand scaling: 1.0 (no scaling)")
 
@@ -91,8 +128,6 @@ def main() -> None:
     mapped = mapped.dropna(subset=["origin_centroid_edge", "dest_centroid_edge", "spawn_edge", "despawn_edge"]).copy()
     print(f"  Centroid assignment kept {len(mapped):,} / {before:,} trips")
 
-    # Ensure vtype_key exists (DROP-IN FIX)
-
     if "vtype_key" not in mapped.columns:
         if "primary_mode" in mapped.columns:
             mapped["vtype_key"] = (
@@ -102,7 +137,6 @@ def main() -> None:
                 .apply(lambda x: "truck" if ("truck" in x or "commercial" in x) else "car")
             )
         else:
-            # Safe fallback if Replica schema differs
             mapped["vtype_key"] = "car"
 
     od_pairs = (
@@ -113,28 +147,41 @@ def main() -> None:
     )
     print(f"  OD pairs (time-independent): {len(od_pairs):,}")
 
-    # CSR build
     print("\nPrep: Build CSR adjacency (travel-time)")
     nodes = list(G.nodes())
     idx_map = {n: i for i, n in enumerate(nodes)}
     A = build_csr_from_graph(G, nodes)
-    indptr, indices, base_w = A.indptr.astype(np.int64), A.indices.astype(np.int64), A.data.astype(np.float64)
+    indptr = A.indptr.astype(np.int64)
+    indices = A.indices.astype(np.int64)
+    base_w = A.data.astype(np.float64)
 
-    # Step 5: DAG corridor sampling per OD
-    print("\nStep 5: Mixed-potential DAG corridor construction + uniform sampling")
-    od_paths = dag_sample_centroid_od_paths(
-        od_pairs=od_pairs,
-        nodes=nodes,
-        idx=idx_map,
-        indptr=indptr,
-        indices=indices,
-        base_w=base_w,
-        edge_attrs=edge_attrs,
-        cfg=cfg,
-        rng=rng,
-    )
+    print("\nStep 5: DAG corridor construction + uniform sampling")
+    if cfg.dag_model == "twotree_web":
+        od_paths = dag_sample_centroid_od_paths_twotree_web(
+            od_pairs=od_pairs,
+            nodes=nodes,
+            idx=idx_map,
+            G=G,
+            indptr=indptr,
+            indices=indices,
+            base_w=base_w,
+            edge_attrs=edge_attrs,
+            cfg=cfg,
+            rng=rng,
+        )
+    else:
+        od_paths = dag_sample_centroid_od_paths(
+            od_pairs=od_pairs,
+            nodes=nodes,
+            idx=idx_map,
+            indptr=indptr,
+            indices=indices,
+            base_w=base_w,
+            edge_attrs=edge_attrs,
+            cfg=cfg,
+            rng=rng,
+        )
 
-    # centroid splits CSV
     rows = []
     for (c_o, c_d), plist in od_paths.items():
         for pid, (seq, f) in enumerate(plist):
@@ -148,7 +195,6 @@ def main() -> None:
     pd.DataFrame(rows).to_csv(cfg.out_routes_centroid_csv, index=False)
     print(f"  Wrote centroid splits: {cfg.out_routes_centroid_csv}")
 
-    # Step 6: build full routes (BG join); dep_bin is only for flows
     print("\nStep 6: Building full routes (BG join) and time-binned flow groups")
     route_groups, route_paths = build_routes_with_centroid_trunks(
         G=G,
@@ -163,21 +209,20 @@ def main() -> None:
     route_groups.to_csv(cfg.out_route_groups_csv, index=False)
     print(f"  Wrote route groups: {cfg.out_route_groups_csv}")
 
-    # Replica compare
     model_edge_counts = compute_edge_total_counts(route_paths, route_groups)
     replica_counts = load_replica_link_volume_counts(cfg.replica_edgevol_path)
     table, tv = compare_edge_usage_distributions(
-                    model_edge_counts,
-                    replica_counts,
-                    )
+        model_edge_counts,
+        replica_counts,
+    )
 
     print("\nEdge volume distribution compare (ID-agnostic)")
     print(table.to_string(index=False))
     print(f"\nTotal Variation Distance (TV): {tv:.4f}")
 
-    # Step 7: write SUMO routes
     write_sumo_routes_xml(route_paths, route_groups, cfg.out_routes_xml, dep_bin_minutes=cfg.dep_bin_minutes)
     print("\nDONE.\n")
+
 
 if __name__ == "__main__":
     main()

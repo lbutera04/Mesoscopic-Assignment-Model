@@ -3,7 +3,7 @@ from typing import List
 import pandas as pd
 import networkx as nx
 
-from config import Config
+from ..config import Config
 
 def reconstruct_from_predecessors(pred: np.ndarray, origin_i: int, dest_i: int) -> List[int]:
     """

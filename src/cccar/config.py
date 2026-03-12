@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Tuple
 
+
 @dataclass
 class Config:
     # Paths
@@ -27,11 +28,21 @@ class Config:
     # Optional "bad edge" penalty multiplier
     bad_edge_penalty: float = 1.0
 
-    # NEW (core): corridor slack as multiplicative budget on SSP time
+    # Corridor slack as multiplicative budget on SSP time
     dag_slack: float = 1.25
 
     # How many diverse routes per centroid OD
     routes_per_od: int = 3
+
+    # Routing model selection
+    dag_model: str = "mixed"  # {"mixed", "twotree_web"}
+
+    # Two-tree + webbing knobs (copied from dag_benchmarks defaults)
+    twotree_seed_bfs_max_hops: int = 50
+    twotree_max_web_edges: int = 20000
+    twotree_seed_min_incident: int = 4
+    twotree_seed_min_distinct_bases: int = 2
+    twotree_seed_require_link: bool = False
 
     # Reproducibility
     rng_seed: int = 7

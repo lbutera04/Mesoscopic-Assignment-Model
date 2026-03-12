@@ -1091,17 +1091,8 @@ def build_od_twotree_web_csr_numba(
     # ------------------------------------------------------------
     # Basic endpoint / budget validation
     # ------------------------------------------------------------
-    # n = indptr.shape[0] - 1
-    # if origin_i < 0 or origin_i >= n or dest_i < 0 or dest_i >= n:
-    #     return _empty_result()
 
-    # ssp = float(dist_o[int(dest_i)])
-    # if (not np.isfinite(ssp)):
-    #     return _empty_result()
-    # if slack < 1.0:
-    #     return _empty_result()
-
-    ### DEBUG ###
+    
     n = indptr.shape[0] - 1
     if origin_i < 0 or origin_i >= n or dest_i < 0 or dest_i >= n:
         return _fail_with_probe(arc_stamp, 1, origin_i, dest_i, n)
@@ -1112,7 +1103,7 @@ def build_od_twotree_web_csr_numba(
     if slack < 1.0:
         return _fail_with_probe(arc_stamp, 3, int(slack * 1_000_000.0), 0, 0)
     
-    #############
+    
 
     budget = float(slack) * ssp
     tol = float(eps_rel) * max(1.0, budget)
@@ -1140,12 +1131,8 @@ def build_od_twotree_web_csr_numba(
         stamp[gu] = cand_stamp
         g2l[gu] = nloc
         nloc += 1
-
-    # # exact V_B only: do not force origin/dest in
-    # if stamp[int(origin_i)] != cand_stamp or stamp[int(dest_i)] != cand_stamp or nloc == 0:
-    #     return _empty_result()
     
-    ### DEBUG ###
+    
 
     if stamp[int(origin_i)] != cand_stamp or stamp[int(dest_i)] != cand_stamp or nloc == 0:
         return _fail_with_probe(
@@ -1156,7 +1143,7 @@ def build_od_twotree_web_csr_numba(
             nloc,
         )
     
-    #############
+    
 
     core_nodes = _build_core_nodes_from_stamp(reach_o, stamp, cand_stamp, g2l, nloc)
 
@@ -1166,21 +1153,8 @@ def build_od_twotree_web_csr_numba(
     # ------------------------------------------------------------
     # (B) Restrict the two fixed shortest-consistent trees to V_B
     # ------------------------------------------------------------
-    # parF, okF = _build_forward_parent_restricted(
-    #     int(origin_i), core_nodes, g2l, stamp, cand_stamp,
-    #     indptr, indices, w, dist_o, pred_to_start, float(eps_rel),
-    # )
-    # if okF[0] == 0:
-    #     return _empty_result()
 
-    # parR, okR = _build_reverse_parent_restricted(
-    #     int(dest_i), core_nodes, g2l, stamp, cand_stamp,
-    #     indptr, indices, w, dist_to_d, pred_to_end, float(eps_rel),
-    # )
-    # if okR[0] == 0:
-    #     return _empty_result()
-
-    ### DEBUG ###
+    
 
     parF, okF, fail_vF, fail_pF, fail_rF = _build_forward_parent_restricted(
         int(origin_i), core_nodes, g2l, stamp, cand_stamp,
@@ -1196,7 +1170,7 @@ def build_od_twotree_web_csr_numba(
     if okR[0] == 0:
         return _fail_with_probe(arc_stamp, 21, fail_vR, fail_pR, fail_rR)
     
-    #############
+    
 
     childF_ptr, childF_idx = _build_children_from_parent(parF, s_local)
     childR_ptr, childR_idx = _build_children_from_parent(parR, t_local)
@@ -1234,24 +1208,20 @@ def build_od_twotree_web_csr_numba(
             continue
 
         p = int(parF[v])
-        # if p < 0 or active[p] == 0:
-        #     return _empty_result()
 
-        ### DEBUG ###
+        
         
         if p < 0 or active[p] == 0:
             gp = -1 if p < 0 else int(core_nodes[p])
             return _fail_with_probe(arc_stamp, 30, int(core_nodes[v]), gp, 0)
         
-        #############
+        
 
         edge_ct_new = _append_edge_strict(
             p, v, core_nodes, indptr, indices, edge_u, edge_v, edge_pos, edge_ct
         )
-        # if edge_ct_new < 0:
-        #     return _empty_result()
         
-        ### DEBUG ###
+        
 
         if edge_ct_new < 0:
             return _fail_with_probe(
@@ -1262,7 +1232,7 @@ def build_od_twotree_web_csr_numba(
                 int(-edge_ct_new),
             )
         
-        #############
+        
 
         edge_ct = edge_ct_new
 
@@ -1277,16 +1247,14 @@ def build_od_twotree_web_csr_numba(
             continue
 
         p = int(parR[u])
-        # if p < 0 or active[p] == 0:
-        #     return _empty_result()
 
-        ### DEBUG ###
+        
         
         if p < 0 or active[p] == 0:
             gp = -1 if p < 0 else int(core_nodes[p])
             return _fail_with_probe(arc_stamp, 32, int(core_nodes[u]), gp, 0)
         
-        #############
+        
 
         # Shared-family overlap case handled by construction:
         # if forward family already implies p-parent relation as u -> p, do not re-emit.
@@ -1302,10 +1270,8 @@ def build_od_twotree_web_csr_numba(
         edge_ct_new = _append_edge_strict(
             u, p, core_nodes, indptr, indices, edge_u, edge_v, edge_pos, edge_ct
         )
-        # if edge_ct_new < 0:
-        #     return _empty_result()
         
-        ### DEBUG ###
+        
 
         if edge_ct_new < 0:
             return _fail_with_probe(
@@ -1316,7 +1282,7 @@ def build_od_twotree_web_csr_numba(
                 int(-edge_ct_new),
             )
 
-        #############
+        
         edge_ct = edge_ct_new
 
     # ------------------------------------------------------------
@@ -1333,10 +1299,7 @@ def build_od_twotree_web_csr_numba(
             if fwd_keep[u] == 0 or rev_keep[u] == 0:
                 active[u] = 0
 
-    # if active[s_local] == 0 or active[t_local] == 0:
-    #     return _empty_result()
-
-    ### DEBUG ###
+    
     
     if active[s_local] == 0 or active[t_local] == 0:
         return _fail_with_probe(
@@ -1347,7 +1310,7 @@ def build_od_twotree_web_csr_numba(
             0,
         )
     
-    #############
+    
 
     # keep only pruned edge set
     kept_edge_ct = 0
@@ -1371,15 +1334,13 @@ def build_od_twotree_web_csr_numba(
     for u in range(nloc):
         if active[u] == 1:
             active_ct += 1
-    # if topo_len != active_ct:
-    #     return _empty_result()
     
-    ### DEBUG ###
+    
 
     if topo_len != active_ct:
         return _fail_with_probe(arc_stamp, 50, topo_len, active_ct, 0)
     
-    #############
+    
 
     # room for future insertions
     topo_work = np.empty(nloc, dtype=np.int64)
@@ -1483,10 +1444,8 @@ def build_od_twotree_web_csr_numba(
                             root_local, y, core_nodes, indptr, indices,
                             edge_u, edge_v, edge_pos, edge_ct
                         )
-                        # if edge_ct_new < 0:
-                        #     return _empty_result()
                         
-                        ### DEBUG ###
+                        
 
                         if edge_ct_new < 0:
                             return _fail_with_probe(
@@ -1497,7 +1456,7 @@ def build_od_twotree_web_csr_numba(
                                 int(-edge_ct_new),
                             )
                         
-                        #############
+                        
 
 
                         edge_ct = edge_ct_new
@@ -1532,10 +1491,8 @@ def build_od_twotree_web_csr_numba(
                     new_topo_len = _insert_internal_block_before_y(
                         topo_work, topo_len, rank, y, internal_path, k_internal
                     )
-                    # if new_topo_len < 0:
-                    #     return _empty_result()
                     
-                    ### DEBUG ###
+                    
 
                     if new_topo_len < 0:
                         return _fail_with_probe(
@@ -1546,7 +1503,7 @@ def build_od_twotree_web_csr_numba(
                             k_internal,
                         )
                     
-                    #############
+                    
 
 
                     topo_len = new_topo_len
@@ -1564,10 +1521,8 @@ def build_od_twotree_web_csr_numba(
                             prev, z, core_nodes, indptr, indices,
                             edge_u, edge_v, edge_pos, edge_ct
                         )
-                        # if edge_ct_new < 0:
-                        #     return _empty_result()
                         
-                        ### DEBUG ###
+                        
 
                         if edge_ct_new < 0:
                             return _fail_with_probe(
@@ -1578,7 +1533,7 @@ def build_od_twotree_web_csr_numba(
                                 int(-edge_ct_new),
                             )
                         
-                        #############
+                        
                         edge_ct = edge_ct_new
                         prev = z
 
@@ -1586,10 +1541,8 @@ def build_od_twotree_web_csr_numba(
                         prev, y, core_nodes, indptr, indices,
                         edge_u, edge_v, edge_pos, edge_ct
                     )
-                    # if edge_ct_new < 0:
-                    #     return _empty_result()
 
-                    ### DEBUG ###
+                    
 
                     if edge_ct_new < 0:
                         return _fail_with_probe(
@@ -1600,7 +1553,7 @@ def build_od_twotree_web_csr_numba(
                             int(-edge_ct_new),
                         )
                     
-                    #############
+                    
                     edge_ct = edge_ct_new
 
                     web_edges_added += needed_edges
@@ -1627,23 +1580,19 @@ def build_od_twotree_web_csr_numba(
     for u in range(nloc):
         if active[u] == 1:
             active_ct_final += 1
-    # if topo_final_len != active_ct_final:
-    #     return _empty_result()
     
-    ### DEBUG ###
+    
     if topo_final_len != active_ct_final:
         return _fail_with_probe(arc_stamp, 70, topo_final_len, active_ct_final, 0)
-    #############
+    
 
     final_ptr, final_idx = _build_csr_from_edges(nloc, active, edge_u, edge_v, edge_ct)
     fwd_final = _forward_reachable_from_csr(s_local, active, final_ptr, final_idx)
-    # if fwd_final[t_local] == 0:
-    #     return _empty_result()
 
-    ### DEBUG ###
+    
     if fwd_final[t_local] == 0:
         return _fail_with_probe(arc_stamp, 71, int(core_nodes[s_local]), int(core_nodes[t_local]), 0)
-    #############
+    
 
     # ------------------------------------------------------------
     # (I) Final compact output CSR + edge-slot-aligned decay

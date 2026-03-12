@@ -2,11 +2,8 @@
 Dual-Arborescence and Webbing (DAW) methodology for s->t corridor DAG construction. 
 """
 
-
-
 import numba as nb
 import numpy as np
-
 
 # ============================================================
 # Small utilities
@@ -26,7 +23,6 @@ def _empty_result():
         np.int64(0),                   # web_edges_attempted
     )
 
-
 @nb.njit(cache=True)
 def _clear_probe(arc_stamp: np.ndarray):
     m = arc_stamp.shape[0]
@@ -38,7 +34,6 @@ def _clear_probe(arc_stamp: np.ndarray):
         arc_stamp[2] = np.int64(0)  # payload B
     if m > 3:
         arc_stamp[3] = np.int64(0)  # payload C
-
 
 @nb.njit(cache=True)
 def _fail_with_probe(
@@ -58,11 +53,9 @@ def _fail_with_probe(
         arc_stamp[3] = np.int64(c)
     return _empty_result()
 
-
 @nb.njit(cache=True)
 def _float_eq_rel(a: float, b: float, eps_rel: float) -> bool:
     return abs(a - b) <= eps_rel * max(1.0, abs(a), abs(b))
-
 
 @nb.njit(cache=True)
 def _find_arc_pos(indptr: np.ndarray, indices: np.ndarray, gu: int, gv: int) -> int:
@@ -72,7 +65,6 @@ def _find_arc_pos(indptr: np.ndarray, indices: np.ndarray, gu: int, gv: int) -> 
         if int(indices[p]) == gv:
             return p
     return -1
-
 
 @nb.njit(cache=True)
 def _edge_supports_relation(
@@ -92,51 +84,12 @@ def _edge_supports_relation(
                 return True
     return False
 
-
 @nb.njit(cache=True)
 def _has_local_edge(edge_u: np.ndarray, edge_v: np.ndarray, edge_ct: int, u: int, v: int) -> bool:
     for i in range(edge_ct):
         if int(edge_u[i]) == u and int(edge_v[i]) == v:
             return True
     return False
-
-
-# @nb.njit(cache=True)
-# def _append_edge_strict(
-#     u: int,
-#     v: int,
-#     core_nodes: np.ndarray,
-#     indptr: np.ndarray,
-#     indices: np.ndarray,
-#     edge_u: np.ndarray,
-#     edge_v: np.ndarray,
-#     edge_pos: np.ndarray,
-#     edge_ct: int,
-# ) -> int:
-#     """
-#     Strict append:
-#       - requires corresponding global CSR arc to exist
-#       - requires the local directed edge not already be present
-#       - no blanket dedupe
-#     Returns:
-#       new edge_ct on success
-#       -1 on failure
-#     """
-#     if _has_local_edge(edge_u, edge_v, edge_ct, u, v):
-#         return -1
-
-#     gu = int(core_nodes[u])
-#     gv = int(core_nodes[v])
-#     p = _find_arc_pos(indptr, indices, gu, gv)
-#     if p < 0:
-#         return -1
-#     if edge_ct >= edge_u.shape[0]:
-#         return -1
-
-#     edge_u[edge_ct] = u
-#     edge_v[edge_ct] = v
-#     edge_pos[edge_ct] = p
-#     return edge_ct + 1
 
 @nb.njit(cache=True)
 def _append_edge_strict(
@@ -175,7 +128,6 @@ def _append_edge_strict(
     edge_pos[edge_ct] = p
     return edge_ct + 1
 
-
 @nb.njit(cache=True)
 def _advance_node_stamp_counter(stamp: np.ndarray, counter: np.ndarray) -> int:
     """
@@ -191,7 +143,6 @@ def _advance_node_stamp_counter(stamp: np.ndarray, counter: np.ndarray) -> int:
         cur = 1
     counter[0] = cur
     return cur
-
 
 # ============================================================
 # Seed BFS cache builder (kept compatible with old public API)
@@ -244,7 +195,6 @@ def _bfs_hops_count_one_seed(
             m += 1
 
     return m
-
 
 @nb.njit(cache=True)
 def _bfs_hops_fill_one_seed(
@@ -299,7 +249,6 @@ def _bfs_hops_fill_one_seed(
             wpos += 1
 
     return wpos
-
 
 def build_seed_bfs_tree_cache_hops_numba(
     indptr: np.ndarray,
@@ -378,7 +327,6 @@ def build_seed_bfs_tree_cache_hops_numba(
 
     return seed_ptr, all_u, all_v
 
-
 def compute_touched_seeds_for_od(
     reach_o: np.ndarray,
     dist_o: np.ndarray,
@@ -415,7 +363,6 @@ def compute_touched_seeds_for_od(
         return np.zeros(0, dtype=np.int64)
     return np.unique(sid.astype(np.int64, copy=False))
 
-
 # ============================================================
 # Parent / child helpers on exact V_B
 # ============================================================
@@ -434,92 +381,6 @@ def _build_core_nodes_from_stamp(
         if stamp[gu] == cand_stamp:
             core_nodes[int(g2l[gu])] = gu
     return core_nodes
-
-
-# @nb.njit(cache=True)
-# def _build_forward_parent_restricted(
-#     origin_i: int,
-#     core_nodes: np.ndarray,
-#     g2l: np.ndarray,
-#     stamp: np.ndarray,
-#     cand_stamp: int,
-#     indptr: np.ndarray,
-#     indices: np.ndarray,
-#     w: np.ndarray,
-#     dist_o: np.ndarray,
-#     pred_to_start: np.ndarray,
-#     eps_rel: float,
-# ) -> tuple[np.ndarray, np.ndarray]:
-#     """
-#     Returns (parF, ok_mask)
-#       ok_mask[0] == 1 on success, 0 on failure
-#     """
-#     nloc = core_nodes.shape[0]
-#     parF = -np.ones(nloc, dtype=np.int64)
-#     ok = np.ones(1, dtype=np.uint8)
-
-#     for lv in range(nloc):
-#         gv = int(core_nodes[lv])
-#         if gv == origin_i:
-#             continue
-
-#         gp = int(pred_to_start[gv])
-#         if gp < 0 or stamp[gp] != cand_stamp:
-#             ok[0] = 0
-#             return parF, ok
-
-#         expected = float(dist_o[gv]) - float(dist_o[gp])
-#         if not _edge_supports_relation(indptr, indices, w, gp, gv, expected, eps_rel):
-#             ok[0] = 0
-#             return parF, ok
-
-#         parF[lv] = int(g2l[gp])
-
-#     return parF, ok
-
-
-# @nb.njit(cache=True)
-# def _build_reverse_parent_restricted(
-#     dest_i: int,
-#     core_nodes: np.ndarray,
-#     g2l: np.ndarray,
-#     stamp: np.ndarray,
-#     cand_stamp: int,
-#     indptr: np.ndarray,
-#     indices: np.ndarray,
-#     w: np.ndarray,
-#     dist_to_d: np.ndarray,
-#     pred_to_end: np.ndarray,
-#     eps_rel: float,
-# ) -> tuple[np.ndarray, np.ndarray]:
-#     """
-#     Returns (parR, ok_mask)
-#       parR[u_local] = successor-toward-d local id
-#       ok_mask[0] == 1 on success, 0 on failure
-#     """
-#     nloc = core_nodes.shape[0]
-#     parR = -np.ones(nloc, dtype=np.int64)
-#     ok = np.ones(1, dtype=np.uint8)
-
-#     for lu in range(nloc):
-#         gu = int(core_nodes[lu])
-#         if gu == dest_i:
-#             continue
-
-#         gp = int(pred_to_end[gu])
-#         if gp < 0 or stamp[gp] != cand_stamp:
-#             ok[0] = 0
-#             return parR, ok
-
-#         expected = float(dist_to_d[gu]) - float(dist_to_d[gp])
-#         if not _edge_supports_relation(indptr, indices, w, gu, gp, expected, eps_rel):
-#             ok[0] = 0
-#             return parR, ok
-
-#         parR[lu] = int(g2l[gp])
-
-#     return parR, ok
-
 
 @nb.njit(cache=True)
 def _build_forward_parent_restricted(
@@ -631,7 +492,6 @@ def _build_reverse_parent_restricted(
 
     return parR, ok, fail_node, fail_parent, fail_reason
 
-
 @nb.njit(cache=True)
 def _build_children_from_parent(
     parent_local: np.ndarray,
@@ -664,7 +524,6 @@ def _build_children_from_parent(
             fill[p] += 1
 
     return ptr, idx
-
 
 # ============================================================
 # Halo
@@ -734,7 +593,6 @@ def _run_halo(
 
     return side
 
-
 # ============================================================
 # Edge-list -> CSR / topo / reachability helpers
 # ============================================================
@@ -771,7 +629,6 @@ def _build_csr_from_edges(
 
     return ptr, idx
 
-
 @nb.njit(cache=True)
 def _build_reverse_csr_from_edges(
     nloc: int,
@@ -803,7 +660,6 @@ def _build_reverse_csr_from_edges(
             fill[v] += 1
 
     return ptr, idx
-
 
 @nb.njit(cache=True)
 def _forward_reachable_from_csr(
@@ -837,7 +693,6 @@ def _forward_reachable_from_csr(
                 t += 1
 
     return seen
-
 
 @nb.njit(cache=True)
 def _kahn_toposort_edges(
@@ -885,7 +740,6 @@ def _kahn_toposort_edges(
 
     return topo, out
 
-
 @nb.njit(cache=True)
 def _fill_rank_from_topo(topo: np.ndarray, topo_len: int, nloc: int, active: np.ndarray) -> np.ndarray:
     rank = -np.ones(nloc, dtype=np.int64)
@@ -894,7 +748,6 @@ def _fill_rank_from_topo(topo: np.ndarray, topo_len: int, nloc: int, active: np.
         if active[u] == 1:
             rank[u] = i
     return rank
-
 
 @nb.njit(cache=True)
 def _insert_internal_block_before_y(
@@ -934,7 +787,6 @@ def _insert_internal_block_before_y(
         rank[int(topo[i])] = i
 
     return new_len
-
 
 # ============================================================
 # Seed-cache reconstruction
@@ -1004,7 +856,6 @@ def _reconstruct_seed_parent_local_from_cache(
     parent_local[root_local] = -1
     return root_local, parent_local, ok
 
-
 @nb.njit(cache=True)
 def _recover_seed_path_to_hit(
     root_local: int,
@@ -1030,7 +881,6 @@ def _recover_seed_path_to_hit(
             return -1
         cur = p
     return plen
-
 
 # ============================================================
 # Main builder
@@ -1092,7 +942,6 @@ def build_od_twotree_web_csr_numba(
     # Basic endpoint / budget validation
     # ------------------------------------------------------------
 
-    
     n = indptr.shape[0] - 1
     if origin_i < 0 or origin_i >= n or dest_i < 0 or dest_i >= n:
         return _fail_with_probe(arc_stamp, 1, origin_i, dest_i, n)
@@ -1102,8 +951,6 @@ def build_od_twotree_web_csr_numba(
         return _fail_with_probe(arc_stamp, 2, dest_i, 0, 0)
     if slack < 1.0:
         return _fail_with_probe(arc_stamp, 3, int(slack * 1_000_000.0), 0, 0)
-    
-    
 
     budget = float(slack) * ssp
     tol = float(eps_rel) * max(1.0, budget)
@@ -1131,8 +978,6 @@ def build_od_twotree_web_csr_numba(
         stamp[gu] = cand_stamp
         g2l[gu] = nloc
         nloc += 1
-    
-    
 
     if stamp[int(origin_i)] != cand_stamp or stamp[int(dest_i)] != cand_stamp or nloc == 0:
         return _fail_with_probe(
@@ -1142,8 +987,6 @@ def build_od_twotree_web_csr_numba(
             int(stamp[int(dest_i)] == cand_stamp),
             nloc,
         )
-    
-    
 
     core_nodes = _build_core_nodes_from_stamp(reach_o, stamp, cand_stamp, g2l, nloc)
 
@@ -1153,8 +996,6 @@ def build_od_twotree_web_csr_numba(
     # ------------------------------------------------------------
     # (B) Restrict the two fixed shortest-consistent trees to V_B
     # ------------------------------------------------------------
-
-    
 
     parF, okF, fail_vF, fail_pF, fail_rF = _build_forward_parent_restricted(
         int(origin_i), core_nodes, g2l, stamp, cand_stamp,
@@ -1169,8 +1010,6 @@ def build_od_twotree_web_csr_numba(
     )
     if okR[0] == 0:
         return _fail_with_probe(arc_stamp, 21, fail_vR, fail_pR, fail_rR)
-    
-    
 
     childF_ptr, childF_idx = _build_children_from_parent(parF, s_local)
     childR_ptr, childR_idx = _build_children_from_parent(parR, t_local)
@@ -1209,19 +1048,13 @@ def build_od_twotree_web_csr_numba(
 
         p = int(parF[v])
 
-        
-        
         if p < 0 or active[p] == 0:
             gp = -1 if p < 0 else int(core_nodes[p])
             return _fail_with_probe(arc_stamp, 30, int(core_nodes[v]), gp, 0)
-        
-        
 
         edge_ct_new = _append_edge_strict(
             p, v, core_nodes, indptr, indices, edge_u, edge_v, edge_pos, edge_ct
         )
-        
-        
 
         if edge_ct_new < 0:
             return _fail_with_probe(
@@ -1231,8 +1064,6 @@ def build_od_twotree_web_csr_numba(
                 int(core_nodes[v]),
                 int(-edge_ct_new),
             )
-        
-        
 
         edge_ct = edge_ct_new
 
@@ -1248,13 +1079,9 @@ def build_od_twotree_web_csr_numba(
 
         p = int(parR[u])
 
-        
-        
         if p < 0 or active[p] == 0:
             gp = -1 if p < 0 else int(core_nodes[p])
             return _fail_with_probe(arc_stamp, 32, int(core_nodes[u]), gp, 0)
-        
-        
 
         # Shared-family overlap case handled by construction:
         # if forward family already implies p-parent relation as u -> p, do not re-emit.
@@ -1270,8 +1097,6 @@ def build_od_twotree_web_csr_numba(
         edge_ct_new = _append_edge_strict(
             u, p, core_nodes, indptr, indices, edge_u, edge_v, edge_pos, edge_ct
         )
-        
-        
 
         if edge_ct_new < 0:
             return _fail_with_probe(
@@ -1282,7 +1107,6 @@ def build_od_twotree_web_csr_numba(
                 int(-edge_ct_new),
             )
 
-        
         edge_ct = edge_ct_new
 
     # ------------------------------------------------------------
@@ -1299,8 +1123,6 @@ def build_od_twotree_web_csr_numba(
             if fwd_keep[u] == 0 or rev_keep[u] == 0:
                 active[u] = 0
 
-    
-    
     if active[s_local] == 0 or active[t_local] == 0:
         return _fail_with_probe(
             arc_stamp,
@@ -1309,8 +1131,6 @@ def build_od_twotree_web_csr_numba(
             int(active[t_local]),
             0,
         )
-    
-    
 
     # keep only pruned edge set
     kept_edge_ct = 0
@@ -1334,13 +1154,9 @@ def build_od_twotree_web_csr_numba(
     for u in range(nloc):
         if active[u] == 1:
             active_ct += 1
-    
-    
 
     if topo_len != active_ct:
         return _fail_with_probe(arc_stamp, 50, topo_len, active_ct, 0)
-    
-    
 
     # room for future insertions
     topo_work = np.empty(nloc, dtype=np.int64)
@@ -1444,8 +1260,6 @@ def build_od_twotree_web_csr_numba(
                             root_local, y, core_nodes, indptr, indices,
                             edge_u, edge_v, edge_pos, edge_ct
                         )
-                        
-                        
 
                         if edge_ct_new < 0:
                             return _fail_with_probe(
@@ -1455,9 +1269,6 @@ def build_od_twotree_web_csr_numba(
                                 int(core_nodes[y]),
                                 int(-edge_ct_new),
                             )
-                        
-                        
-
 
                         edge_ct = edge_ct_new
                         web_edges_added += 1
@@ -1491,8 +1302,6 @@ def build_od_twotree_web_csr_numba(
                     new_topo_len = _insert_internal_block_before_y(
                         topo_work, topo_len, rank, y, internal_path, k_internal
                     )
-                    
-                    
 
                     if new_topo_len < 0:
                         return _fail_with_probe(
@@ -1502,9 +1311,6 @@ def build_od_twotree_web_csr_numba(
                             int(core_nodes[y]),
                             k_internal,
                         )
-                    
-                    
-
 
                     topo_len = new_topo_len
 
@@ -1521,8 +1327,6 @@ def build_od_twotree_web_csr_numba(
                             prev, z, core_nodes, indptr, indices,
                             edge_u, edge_v, edge_pos, edge_ct
                         )
-                        
-                        
 
                         if edge_ct_new < 0:
                             return _fail_with_probe(
@@ -1532,8 +1336,7 @@ def build_od_twotree_web_csr_numba(
                                 int(core_nodes[z]),
                                 int(-edge_ct_new),
                             )
-                        
-                        
+
                         edge_ct = edge_ct_new
                         prev = z
 
@@ -1541,8 +1344,6 @@ def build_od_twotree_web_csr_numba(
                         prev, y, core_nodes, indptr, indices,
                         edge_u, edge_v, edge_pos, edge_ct
                     )
-
-                    
 
                     if edge_ct_new < 0:
                         return _fail_with_probe(
@@ -1552,8 +1353,7 @@ def build_od_twotree_web_csr_numba(
                             int(core_nodes[y]),
                             int(-edge_ct_new),
                         )
-                    
-                    
+
                     edge_ct = edge_ct_new
 
                     web_edges_added += needed_edges
@@ -1580,19 +1380,15 @@ def build_od_twotree_web_csr_numba(
     for u in range(nloc):
         if active[u] == 1:
             active_ct_final += 1
-    
-    
+
     if topo_final_len != active_ct_final:
         return _fail_with_probe(arc_stamp, 70, topo_final_len, active_ct_final, 0)
-    
 
     final_ptr, final_idx = _build_csr_from_edges(nloc, active, edge_u, edge_v, edge_ct)
     fwd_final = _forward_reachable_from_csr(s_local, active, final_ptr, final_idx)
 
-    
     if fwd_final[t_local] == 0:
         return _fail_with_probe(arc_stamp, 71, int(core_nodes[s_local]), int(core_nodes[t_local]), 0)
-    
 
     # ------------------------------------------------------------
     # (I) Final compact output CSR + edge-slot-aligned decay
